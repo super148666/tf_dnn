@@ -34,6 +34,7 @@ def load_image(addr):
     img = cv2.resize(img, (32, 32), interpolation=cv2.INTER_CUBIC)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     img = img.astype(np.float32)
+    img /= 255.0
     return img
 
 def _int64_feature(value):
@@ -54,8 +55,49 @@ for i in range(len(train_addrs)):
     img = load_image(train_addrs[i])
     label = train_labels[i]
     # Create a feature
-    feature = {'train/label': _int64_feature(label),
-               'train/image': _bytes_feature(tf.compat.as_bytes(img.tostring()))}
+    feature = {'label': _int64_feature(label),
+               'image': _bytes_feature(tf.compat.as_bytes(img.tostring()))}
+    # Create an example protocol buffer
+    example = tf.train.Example(features=tf.train.Features(feature=feature))
+
+    # Serialize to string and write on the file
+    writer.write(example.SerializeToString())
+
+val_filename = './tfrecords/valid.tfrecords'  # address to save the TFRecords file
+# open the TFRecords file
+writer = tf.python_io.TFRecordWriter(val_filename)
+for i in range(len(val_addrs)):
+    # print how many images are saved every 1000 images
+    if not i % 1000:
+        print("Valid data: {0}/{1}".format(i, len(val_addrs)))
+        sys.stdout.flush()
+    # Load the image
+    img = load_image(val_addrs[i])
+    label = val_labels[i]
+    # Create a feature
+    feature = {'label': _int64_feature(label),
+               'image': _bytes_feature(tf.compat.as_bytes(img.tostring()))}
+    # Create an example protocol buffer
+    example = tf.train.Example(features=tf.train.Features(feature=feature))
+
+    # Serialize to string and write on the file
+    writer.write(example.SerializeToString())
+
+test_filename = './tfrecords/test.tfrecords'  # address to save the TFRecords file
+# open the TFRecords file
+writer = tf.python_io.TFRecordWriter(test_filename)
+for i in range(len(test_addrs)):
+    # print how many images are saved every 1000 images
+    if not i % 1000:
+        print("Test data: {0}/{1}".format(i, len(test_addrs)))
+        sys.stdout.flush()
+    # Load the image
+    # print(i)
+    img = load_image(test_addrs[i])
+    label = test_labels[i]
+    # Create a feature
+    feature = {'label': _int64_feature(label),
+               'image': _bytes_feature(tf.compat.as_bytes(img.tostring()))}
     # Create an example protocol buffer
     example = tf.train.Example(features=tf.train.Features(feature=feature))
 

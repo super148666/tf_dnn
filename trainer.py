@@ -13,6 +13,10 @@ from six.moves import urllib
 
 FLAGS = None
 
+data_path = './tfrecords/train.tfrecords'  # address to save the hdf5 file
+feature = {'train/image': tf.FixedLenFeature([], tf.string),
+               'train/label': tf.FixedLenFeature([], tf.int64)}
+
 tf.logging.set_verbosity(tf.logging.INFO)
 
 path_cones = '/media/chao/RAID1_L/chaoz/cone_detection_data/basler32/1/'
@@ -34,7 +38,7 @@ def _read_pngs_from(path):
   for filename in png_files_path:
     im = Image.open(filename)
     im = np.asarray(im, np.uint8)
-
+1
     # get only images name, not path
     image_name = filename.split('/')[-1].split('.')[0]
     images.append([int(image_name), im])
@@ -149,9 +153,17 @@ def cnn_model_fn(features, labels, mode):
 
 def main(unused_argv):
   # Load training and eval data
-  mnist = tf.contrib.learn.datasets.load_dataset("mnist")
-  train_data = mnist.train.images  # Returns np.array
-  train_labels = np.asarray(mnist.train.labels, dtype=np.int32)
+  filename_queue = tf.train.string_input_producer([data_path], num_epochs=1)
+  reader = tf.TFRecordReader()
+  _, serialized_example = reader.read(filename_queue)
+  features = tf.parse_single_example(serialized_example, features=feature)
+  image = tf.decode_raw(features['train/image'], tf.float32)
+  label = tf.cast(features['train/label'], tf.int32)
+  image = tf.reshape(image, [32, 32])
+  train_data, train_labels = tf.train.shuffle_batch([image, label], batch_size=10, capacity=30, num_threads=1, min_after_dequeue=10)
+#   mnist = tf.contrib.learn.datasets.load_dataset("mnist")
+#   train_data = mnist.train.images  # Returns np.array
+#   train_labels = np.asarray(mnist.train.labels, dtype=np.int32)
   eval_data = mnist.test.images  # Returns np.array
   eval_labels = np.asarray(mnist.test.labels, dtype=np.int32)
 
