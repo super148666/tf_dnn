@@ -27,6 +27,29 @@ val_labels = labels[int(0.6 * len(addrs)):int(0.8 * len(addrs))]
 test_addrs = addrs[int(0.8 * len(addrs)):]
 test_labels = labels[int(0.8 * len(labels)):]
 
+
+def decode(serialized_example):
+  """Parses an image and label from the given `serialized_example`."""
+  features = tf.parse_single_example(
+      serialized_example,
+      # Defaults are not specified since both keys are required.
+      features={
+          'image_raw': tf.FixedLenFeature([], tf.string),
+          'label': tf.FixedLenFeature([], tf.int64),
+      })
+
+  # Convert from a scalar string tensor (whose single string has
+  # length mnist.IMAGE_PIXELS) to a uint8 tensor with shape
+  # [mnist.IMAGE_PIXELS].
+  image = tf.decode_raw(features['image_raw'], tf.uint8)
+  image.set_shape((mnist.IMAGE_PIXELS))
+
+  # Convert label from a scalar uint8 tensor to an int32 scalar.
+  label = tf.cast(features['label'], tf.int32)
+
+  return image, label
+
+
 def load_image(addr):
     # read an image and resize to (224, 224)
     # cv2 load images as BGR, convert it to RGB
@@ -34,7 +57,7 @@ def load_image(addr):
     img = cv2.resize(img, (32, 32), interpolation=cv2.INTER_CUBIC)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     img = img.astype(np.float32)
-    img /= 255.0
+    img = np.multiply(img, 1.0 / 255.0)
     return img
 
 def _int64_feature(value):
