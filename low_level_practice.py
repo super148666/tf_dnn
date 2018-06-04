@@ -10,10 +10,15 @@ tf.logging.set_verbosity(tf.logging.ERROR)
 
 seed = 100
 
-# mnist = input_data.read_data_sets("/media/chao/RAID1_L/chaoz/mnist_dataset/", one_hot=True)
-image_path = ["/Users/apple/dataset/basler32/",
-              "/Users/apple/dataset/basler/",
-              "/Users/apple/dataset/webcam/"]
+image_path = [
+              "/media/chao/RAID1_L/chaoz/cone_detection_data/basler32/",
+              "/media/chao/RAID1_L/chaoz/cone_detection_data/basler/",
+              "/media/chao/RAID1_L/chaoz/cone_detection_data/webcam/"
+            ]
+
+
+model_path = '/home/chao/vision_ws/src/tensorflow_dnn/my_tf_model'
+
 
 # Image Parameters
 image_width = 32
@@ -27,7 +32,7 @@ test_partition = 1.0 - valid_partition - train_partition
 
 # Training Parameters
 learning_rate = 0.001
-num_steps = 5000
+num_steps = 2500
 batch_size = 128
 display_step = 10
 
@@ -266,6 +271,8 @@ saver = tf.train.Saver()
 
 # Start training
 with tf.Session() as sess:
+    coord = tf.train.Coordinator()
+    threads = tf.train.start_queue_runners(sess=sess, coord=coord)
     # Run the initializer
     sess.run(init)
 
@@ -285,8 +292,9 @@ with tf.Session() as sess:
                   "{:.3f}".format(acc))
             if max_acc < acc:
                 max_acc = acc
-                if max_acc > 0.95:
+                if max_acc > 0.90:
                     saver.save(sess, './my_tf_model')
+                    print("Saved")
         else:
             sess.run(train_op)
 
@@ -294,7 +302,9 @@ with tf.Session() as sess:
 
     print("Testing Accuracy:",
           sess.run(accuracy_t))
-    print("Saved")
+
+    coord.request_stop()
+    coord.join(threads)
 
     # Calculate accuracy for 256 MNIST test images
     # print("Testing Accuracy:", \
