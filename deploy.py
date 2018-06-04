@@ -22,8 +22,8 @@ topic_name = '/pylon_camera_node/image_raw'
 image_width = 32
 image_height = 32
 image_channel = 3
-scale_x = 0.7
-scale_y = 0.7
+scale_x = 1.0
+scale_y = 1.0
 roi_upper = 0.5
 roi_lower = 1.0
 win_height = 32
@@ -36,7 +36,7 @@ num_input = image_width * image_height * image_channel  # MNIST data input (img 
 num_classes = 2  # MNIST total classes (0-9 digits)
 output_size_1 = 6
 output_size_2 = 12
-output_size_3 = 256
+output_size_3 = 120
 output_size_4 = num_classes
 
 
@@ -49,12 +49,13 @@ Y = tf.placeholder(tf.float32, [None, num_classes])
 # Create some wrappers for simplicity
 def conv2d(x, W, b, strides=1):
     # Conv2D wrapper, with bias and relu activation
+    
     x = tf.nn.conv2d(x, W, strides=[1, strides, strides, 1], padding='SAME')
     x = tf.nn.bias_add(x, b)
     return tf.nn.relu(x)
 
 
-def maxpool2d(x, k=2):
+def maxpool2d(x, k=2, layer_name):
     # MaxPool2D wrapper
     return tf.nn.max_pool(x, ksize=[1, k, k, 1], strides=[1, k, k, 1],
                           padding='SAME')
@@ -226,7 +227,8 @@ class image_converter:
 
  
 
-prediction = tf.nn.softmax(conv_net(X, weights, biases, dropout=1.0))
+# prediction = tf.nn.softmax(conv_net(X, weights, biases, dropout=1.0))
+prediction = conv_net(X, weights, biases, dropout=1.0)
 
 # init = tf.global_variables_initializer()
 
