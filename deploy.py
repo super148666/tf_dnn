@@ -15,7 +15,7 @@ old_v = tf.logging.get_verbosity()
 tf.logging.set_verbosity(tf.logging.ERROR)
 
 
-model_path = '/home/chao/vision_ws/src/tensorflow_dnn/my_tf_model'
+model_path = '/home/chao/vision_ws/src/tf_dnn/my_tf_model'
 topic_name = '/pylon_camera_node/image_raw'
 
 # Image Parameters
@@ -34,9 +34,9 @@ win_stride = 8
 # Network Parameters
 num_input = image_width * image_height * image_channel  # MNIST data input (img shape: 28*28)
 num_classes = 2  # MNIST total classes (0-9 digits)
-output_size_1 = 6
-output_size_2 = 12
-output_size_3 = 120
+output_size_1 = 8
+output_size_2 = 16
+output_size_3 = 512
 output_size_4 = num_classes
 
 
@@ -52,14 +52,27 @@ def conv2d(x, W, b, strides=1):
     
     x = tf.nn.conv2d(x, W, strides=[1, strides, strides, 1], padding='SAME')
     x = tf.nn.bias_add(x, b)
-    return tf.nn.relu(x)
+    return tf.nn.tanh(x)
 
 
-def maxpool2d(x, k=2, layer_name):
+def maxpool2d(x, k=2):
     # MaxPool2D wrapper
     return tf.nn.max_pool(x, ksize=[1, k, k, 1], strides=[1, k, k, 1],
                           padding='SAME')
 
+
+def fc1d(x, W, b, act=tf.nn.relu):
+    x_reshaped = tf.reshape(x, [-1, W.get_shape().as_list()[0]])
+    pre_activations = tf.add(tf.matmul(x_reshaped, W), b)
+    activations = act(pre_activations, name='activation')
+    
+    return activations
+
+
+def dropout1d(x, dropout):
+    dropped = tf.nn.dropout(x, dropout)
+
+    return dropped
 
 # Create model
 def conv_net(x, weights, biases, dropout):
@@ -89,25 +102,24 @@ def conv_net(x, weights, biases, dropout):
     # input size: 8x8x6
     # output size: 1024
     # Reshape conv2 output to fit fully connected layer input
-    fc1 = tf.reshape(conv2, [-1, weights['wd1'].get_shape().as_list()[0]])
-    fc1 = tf.add(tf.matmul(fc1, weights['wd1']), biases['bd1'])
-    fc1 = tf.nn.relu(fc1)
-    # Apply Dropout
-    fc1 = tf.nn.dropout(fc1, dropout)
+    fc1 = fc1d(conv2, weights['wd1'], biases['bd1'], act=tf.nn.tanh)
+    
+    # Dropout layer
+    dp1 = dropout1d(fc1, dropout)
 
     # Output, class prediction
     # input size: 1024
     # output size: 2
-    out = tf.add(tf.matmul(fc1, weights['out']), biases['out'])
+    out = fc1d(dp1, weights['out'], biases['out'], act=tf.identity)
     return out
 
 
 # Store layers weight & bias
 weights = {
     # 5x5 conv, 3 input, 6 outputs
-    'wc1': tf.Variable(tf.random_normal([5, 5, image_channel, output_size_1])),
+    'wc1': tf.Variable(tf.random_normal([3, 3, image_channel, output_size_1])),
     # 5x5 conv, 6 inputs, 12 outputs
-    'wc2': tf.Variable(tf.random_normal([5, 5, output_size_1, output_size_2])),
+    'wc2': tf.Variable(tf.random_normal([3, 3, output_size_1, output_size_2])),
     # fully connected, 8*8*12 inputs, 256 outputs
     'wd1': tf.Variable(tf.random_normal([8 * 8 * output_size_2, output_size_3])),
     # 1024 inputs, 10 outputs (class prediction)
@@ -192,10 +204,9 @@ class image_converter:
         else:
             self.windows, self.windows_start_points = self.get_image_patch()
             self.results = self.sess.run(self.out, feed_dict={X: self.windows})
-            # print("shape of results: ", self.results.shape)
             for index in range(0,self.results.shape[0]):
-                print(self.results[index])
-                if self.results[index][1] == 1:
+                if self.results[index,0] < self.results[index,1] and self.results[index,1] >0.99:
+                # if self.results[index,1] < self.results[index,0] and self.results[index,0] >0.95:
                     cv2.rectangle(self.proc_image, (self.windows_start_points[index][0], self.windows_start_points[index][1]), (self.windows_start_points[index][0]+self.win_height, self.windows_start_points[index][1]+self.win_width), (0,0,255), 1) 
                     
         cv2.imshow("proc iamge", self.proc_image)
@@ -227,8 +238,8 @@ class image_converter:
 
  
 
-# prediction = tf.nn.softmax(conv_net(X, weights, biases, dropout=1.0))
-prediction = conv_net(X, weights, biases, dropout=1.0)
+prediction = tf.nn.softmax(conv_net(X, weights, biases, dropout=1.0))
+# prediction = conv_net(X, weights, biases, dropout=1.0)
 
 # init = tf.global_variables_initializer()
 

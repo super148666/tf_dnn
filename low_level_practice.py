@@ -17,9 +17,9 @@ image_path = [
             #   "/media/chao/RAID1_L/chaoz/cone_detection_data/webcam/"
             ]
 
-summary_path = '/home/chao/vision_ws/src/tensorflow_dnn/summary/'
+summary_path = '/home/chao/vision_ws/src/tf_dnn/summary/'
 
-model_path = '/home/chao/vision_ws/src/tensorflow_dnn/my_tf_model'
+model_path = '/home/chao/vision_ws/src/tf_dnn/my_tf_model'
 
 
 # Image Parameters
@@ -28,24 +28,24 @@ image_height = 32
 image_channel = 3
 
 # Dataset Partition
-train_partition = 0.4
-valid_partition = 0.4
+train_partition = 0.8
+valid_partition = 0.1
 test_partition = 1.0 - valid_partition - train_partition
 
 # Training Parameters
 learning_rate = 0.001
-num_steps = 2500
+num_steps = 10000
 batch_size = 128
 display_step = 10
 
 
-# Network Parameters
+# Network Parameter
 num_input = image_width * image_height * image_channel  # MNIST data input (img shape: 28*28)
 num_classes = 2  # MNIST total classes (0-9 digits)
-dropout = 0.75  # Dropout, probability to keep units
-output_size_1 = 6
-output_size_2 = 12
-output_size_3 = 120
+dropout = 0.5  # Dropout, probability to keep units
+output_size_1 = 8
+output_size_2 = 16
+output_size_3 = 512
 output_size_4 = num_classes
 
 # # tf Graph input
@@ -65,30 +65,36 @@ def read_images(dataset_paths, batch_size):
         label = 0
         try:  # Python 2
             classes = sorted(os.walk(dataset_path).next()[1])
-        except Exception:  # Python 3
-            classes = sorted(os.walk(dataset_path).__next__()[1])
-        # except StopIteration:
-        #     pass
+        # except Exception:  # Python 3
+            # classes = sorted(os.walk(dataset_path).__next__()[1])
+        except StopIteration:
+            pass
         # List each sub-directory (the classes)
+        print(classes)
+
         for c in classes:
+            label = (int)(c)
+            print(c,label)
             c_dir = os.path.join(dataset_path, c)
             try:  # Python 2
                 walk = os.walk(c_dir).next()
-            except Exception:  # Python 3
-                walk = os.walk(c_dir).__next__()
-            # except StopIteration:
-            #     pass
+            # except Exception:  # Python 3
+                # walk = os.walk(c_dir).__next__()
+            except StopIteration:
+                pass
             # Add each image to the training set
+            count = 0
             for sample in walk[2]:
                 # Only keeps png images
+                if count > 50000:
+                    break
                 if sample.endswith('.png'):
                     imagepaths.append(os.path.join(c_dir, sample))
                     labels.append(label)
-            label += 1
+                    count=count+1
 
     random.Random(seed).shuffle(labels)
     random.Random(seed).shuffle(imagepaths)
-    num_classes = label
     total_data = len(labels)
 
     train_size = (int)(total_data * train_partition) - 1
@@ -188,7 +194,7 @@ def variable_summaries(var):
 
 
 # Create some wrappers for simplicity
-def conv2d(x, W, b, layer_name, strides=1, act=tf.nn.relu):
+def conv2d(x, W, b, layer_name, strides=1, act=tf.nn.tanh):
     # Conv2D wrapper, with bias and relu activation
     with tf.name_scope(layer_name):
         with tf.name_scope('weights'):
@@ -251,10 +257,10 @@ def dropout1d(x, dropout, layer_name):
 def conv_net(x, weights, biases, dropout):
     # Reshape to match picture format [Height x Width x Channel]
     # Tensor input become 4-D: [Batch Size, Height, Width, Channel]
-    x = tf.reshape(x, shape=[-1, image_height, image_width, image_channel])
+    x = tf.reshape(x, [-1, image_height, image_width, image_channel])
 
     # Convolution Layer
-    # input size: 32x32x3
+    # input size: 32x32x334
     # output size: 32x32x3
     conv1 = conv2d(x, weights['wc1'], biases['bc1'], layer_name='conv1')
     # Max Pooling (down-sampling)
@@ -275,7 +281,7 @@ def conv_net(x, weights, biases, dropout):
     # input size: 8x8x6
     # output size: 1024
     # Reshape conv2 output to fit fully connected layer input
-    fc1 = fc1d(conv2, weights['wd1'], biases['bd1'], layer_name='fc1')
+    fc1 = fc1d(conv2, weights['wd1'], biases['bd1'], layer_name='fc1', act=tf.nn.tanh)
     
     # Dropout layer
     dp1 = dropout1d(fc1, dropout, 'dp1')
@@ -290,12 +296,12 @@ def conv_net(x, weights, biases, dropout):
 # Store layers weight & bias
 weights = {
     # 5x5 conv, 3 input, 6 outputs
-    'wc1': tf.Variable(tf.random_normal([5, 5, image_channel, output_size_1])),
+    'wc1': tf.Variable(tf.random_normal([3, 3, image_channel, output_size_1])),
     # 5x5 conv, 6 inputs, 12 outputs
-    'wc2': tf.Variable(tf.random_normal([5, 5, output_size_1, output_size_2])),
-    # fully connected, 8*8*12 inputs, 256 outputs
+    'wc2': tf.Variable(tf.random_normal([3, 3, output_size_1, output_size_2])),
+    # fully connected, 8*8*12 inputs, 256 outpprint(classes)uts
     'wd1': tf.Variable(tf.random_normal([8 * 8 * output_size_2, output_size_3])),
-    # 1024 inputs, 10 outputs (class prediction)
+    # 1024 inputs, 10 outputs (class predictioprint(classes)n)
     'out': tf.Variable(tf.random_normal([output_size_3, output_size_4]))
 }
 
@@ -333,12 +339,15 @@ with tf.name_scope('valid_accuracy'):
         accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
 tf.summary.scalar('valid_accuracy', accuracy)
 
-with tf.name_scope('test_accuracy'):
-    with tf.name_scope('correct_prediction'):
-        correct_pred_t = tf.equal(tf.argmax(prediction_t, 1), tf.cast(Yt, tf.int64))
-    with tf.name_scope('accuracy'):
-        accuracy_t = tf.reduce_mean(tf.cast(correct_pred_t, tf.float32))
-tf.summary.scalar('test_accuracy', accuracy_t)
+# with tf.name_scope('test_accuracy'):
+#     with tf.name_scope('correct_prediction'):
+#         correct_pred_t = tf.equal(tf.argmax(prediction_t, 1), tf.cast(Yt, tf.int64))
+#     with tf.name_scope('accuracy'):
+#         accuracy_t = tf.reduce_mean(tf.cast(correct_pred_t, tf.float32))
+# tf.summary.scalar('test_accuracy', accuracy_t)
+
+correct_pred_t = tf.equal(tf.argmax(prediction_t, 1), tf.cast(Yt, tf.int64))
+accuracy_t = tf.reduce_mean(tf.cast(correct_pred_t, tf.float32))
 
 merged = tf.summary.merge_all()
 writer = tf.summary.FileWriter(summary_path)
@@ -366,23 +375,25 @@ with tf.Session() as sess:
         if step % display_step == 0 or step == 1:
             # Calculate batch loss and accuracy
             summary, _, loss, acc = sess.run([merged, train_op, loss_op, accuracy])
+            # _, loss, acc = sess.run([train_op, loss_op, accuracy])
             print("Step " + str(step) + ", Minibatch Loss= " +
                   "{:.4f}".format(loss) + ", Training Accuracy= " +
                   "{:.3f}".format(acc))
             writer.add_summary(summary, step)
             if max_acc < acc:
                 max_acc = acc
-                if max_acc > 0.90:
+                if max_acc > 0.85:
                     saver.save(sess, './my_tf_model')
                     print("Saved")
         else:
-            summary, _ = sess.run([merged, train_op])
-            writer.add_summary(summary, step)
+            # summary, _ = sess.run([merged, train_op])
+            sess.run(train_op)
+            # writer.add_summary(summary, step)
 
     print("Optimization Finished!")
 
     print("Testing Accuracy:",
-          sess.run(accuracy_t))
+    sess.run(accuracy_t))
 
     coord.request_stop()
     coord.join(threads)
