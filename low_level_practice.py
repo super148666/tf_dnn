@@ -3,8 +3,9 @@ from __future__ import division, print_function, absolute_import
 import tensorflow as tf
 
 import os
+import glob
 import random
-
+import tempfile
 from datetime import datetime
 
 old_v = tf.logging.get_verbosity()
@@ -19,8 +20,11 @@ image_path = [
             #   "/media/chao/RAID1_L/chaoz/cone_detection_data/webcam/"
             ]
 
-summary_path = '/home/chao/vision_ws/src/tf_dnn/summary/' + str(datetime.now()) + '/'
+current_time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
+summary_path = '/media/chao/RAID1_L/chaoz/tf_summary/' + current_time_str + '/'
+
+# model_path = '/media/chao/RAID1_L/chaoz/tf_model/' + current_time_str + '/'
 model_path = '/home/chao/vision_ws/src/tf_dnn/my_tf_model'
 
 
@@ -31,11 +35,12 @@ image_channel = 3
 
 # Dataset Partition
 train_partition = 0.8
-valid_partition = 0.1
+valid_partition = 0.2
 test_partition = 1.0 - valid_partition - train_partition
 
 # Training Parameters
-learning_rate = 0.001
+samples_each_class = 100000
+learning_rate = 0.002
 num_steps = 10000
 batch_size = 128
 display_step = 10
@@ -44,10 +49,10 @@ display_step = 10
 # Network Parameter
 num_input = image_width * image_height * image_channel  # MNIST data input (img shape: 28*28)
 num_classes = 2  # MNIST total classes (0-9 digits)
-dropout = 0.5  # Dropout, probability to keep units
-output_size_1 = 8
-output_size_2 = 16
-output_size_3 = 512
+dropout = 1.0  # Dropout, probability to keep units
+output_size_1 = 9
+output_size_2 = 9
+output_size_3 = 256
 output_size_4 = num_classes
 
 # # tf Graph input
@@ -86,9 +91,10 @@ def read_images(dataset_paths, batch_size):
                 pass
             # Add each image to the training set
             count = 0
+            random.shuffle(walk[2])
             for sample in walk[2]:
                 # Only keeps png images
-                if count > 50000:
+                if count > samples_each_class:
                     break
                 if sample.endswith('.png'):
                     imagepaths.append(os.path.join(c_dir, sample))
@@ -155,17 +161,16 @@ def read_images(dataset_paths, batch_size):
     valid_image = tf.image.resize_images(valid_image, [image_height, image_width])
 
     test_image = tf.image.resize_images(test_image, [image_height, image_width])
+    
+    # # Normalize
 
-    # Normalize
-    train_image = train_image * 2.0 - 1.0
-
-    valid_image = valid_image * 2.0 - 1.0
-
-    test_image = test_image * 2.0 - 1.0
-
+    train_image = tf.image.per_image_standardization(train_image)
+    valid_image = tf.image.per_image_standardization(valid_image)
+    test_image = tf.image.per_image_standardization(test_image)
+    
     # Create batches
-    X, Y = tf.train.batch([train_image, train_label], batch_size=batch_size,
-                          capacity=batch_size * 8,
+    X, Y = tf.train.shuffle_batch([train_image, train_label], batch_size=batch_size,
+                          capacity=batch_size * 8, min_after_dequeue=batch_size * 2,
                           num_threads=4)
 
     Xv, Yv = tf.train.batch([valid_image, valid_label], batch_size=valid_size,
@@ -196,7 +201,7 @@ def variable_summaries(var):
 
 
 # Create some wrappers for simplicity
-def conv2d(x, W, b, layer_name, strides=1, act=tf.nn.tanh):
+def conv2d(x, W, b, layer_name, strides=1, act=tf.nn.relu):
     # Conv2D wrapper, with bias and relu activation
     with tf.name_scope(layer_name):
         with tf.name_scope('weights'):
@@ -211,9 +216,9 @@ def conv2d(x, W, b, layer_name, strides=1, act=tf.nn.tanh):
         with tf.name_scope('Wx_plus_b'):    
             x = tf.nn.conv2d(x, W, strides=[1, strides, strides, 1], padding='SAME')
             x = tf.nn.bias_add(x, b)
-            tf.summary.histogram('pre_activations',x)
+            # tf.summary.histogram('pre_activations',x)
         activations = act(x, name='activation')
-        tf.summary.histogram('activations', activations)
+        # tf.summary.histogram('activations', activations)
     return activations
 
 
@@ -222,7 +227,7 @@ def maxpool2d(x, layer_name, k=2):
     with tf.name_scope(layer_name):
         out = tf.nn.max_pool(x, ksize=[1, k, k, 1], strides=[1, k, k, 1],
                           padding='SAME', name='max_pooling')
-        tf.summary.histogram('max_poolings', out)
+        # tf.summary.histogram('max_poolings', out)
     return out
 
 
@@ -240,16 +245,16 @@ def fc1d(x, W, b, layer_name, act=tf.nn.relu):
         with tf.name_scope('Wx_plus_b'):    
             x_reshaped = tf.reshape(x, [-1, W.get_shape().as_list()[0]])
             pre_activations = tf.add(tf.matmul(x_reshaped, W), b)
-            tf.summary.histogram('pre_activations',pre_activations)
+            # tf.summary.histogram('pre_activations',pre_activations)
         activations = act(pre_activations, name='activation')
-        tf.summary.histogram('activations', activations)
+        # tf.summary.histogram('activations', activations)
 
     return activations
 
 
 def dropout1d(x, dropout, layer_name):
     with tf.name_scope(layer_name):
-        tf.summary.scalar('dropout', dropout)
+        # tf.summary.scalar('dropout', dropout)
         dropped = tf.nn.dropout(x, dropout)
 
     return dropped
@@ -262,98 +267,92 @@ def conv_net(x, weights, biases, dropout):
     x = tf.reshape(x, [-1, image_height, image_width, image_channel])
 
     # Convolution Layer
-    # input size: 32x32x334
-    # output size: 32x32x3
-    conv1 = conv2d(x, weights['wc1'], biases['bc1'], layer_name='conv1')
+    conv1 = conv2d(x, weights['wc1'], biases['bc1'], layer_name='conv1',act=tf.nn.relu)
     # Max Pooling (down-sampling)
-    # input size: 32x32x3
-    # output size: 16x16x3
     conv1 = maxpool2d(conv1, k=2, layer_name='max_pool1')
 
     # Convolution Layer
-    # input size: 16x16x3
-    # output size: 16x16x6
-    conv2 = conv2d(conv1, weights['wc2'], biases['bc2'], layer_name='conv2')
+    conv2 = conv2d(conv1, weights['wc2'], biases['bc2'], layer_name='conv2',act=tf.nn.tanh)
     # Max Pooling (down-sampling)
-    # input size: 16x16x6
-    # output size: 8x8x6
     conv2 = maxpool2d(conv2, k=2, layer_name='max_pool2')
 
     # Fully connected layer
-    # input size: 8x8x6
-    # output size: 1024
-    # Reshape conv2 output to fit fully connected layer input
     fc1 = fc1d(conv2, weights['wd1'], biases['bd1'], layer_name='fc1', act=tf.nn.tanh)
     
     # Dropout layer
     dp1 = dropout1d(fc1, dropout, 'dp1')
 
     # Output, class prediction
-    # input size: 1024
-    # output size: 2
     out = fc1d(dp1, weights['out'], biases['out'], layer_name='out', act=tf.identity)
     return out
 
 
-# Store layers weight & bias
-weights = {
-    # 5x5 conv, 3 input, 6 outputs
-    'wc1': tf.Variable(tf.random_normal([3, 3, image_channel, output_size_1])),
-    # 5x5 conv, 6 inputs, 12 outputs
-    'wc2': tf.Variable(tf.random_normal([3, 3, output_size_1, output_size_2])),
-    # fully connected, 8*8*12 inputs, 256 outpprint(classes)uts
-    'wd1': tf.Variable(tf.random_normal([8 * 8 * output_size_2, output_size_3])),
-    # 1024 inputs, 10 outputs (class predictioprint(classes)n)
-    'out': tf.Variable(tf.random_normal([output_size_3, output_size_4]))
-}
-
-biases = {
-    'bc1': tf.Variable(tf.random_normal([output_size_1])),
-    'bc2': tf.Variable(tf.random_normal([output_size_2])),
-    'bd1': tf.Variable(tf.random_normal([output_size_3])),
-    'out': tf.Variable(tf.random_normal([output_size_4]))
-}
-
-Xa, Ya, Xv, Yv, Xt, Yt = read_images(image_path, batch_size)
-
-# Construct model
-logits = conv_net(X, weights, biases, keep_prob)
-prediction_v = tf.nn.softmax(conv_net(Xv, weights, biases, dropout=1.0))
-
-prediction = tf.nn.softmax(conv_net(X, weights, biases, dropout=1.0))
-
-# Define loss and optimizer
-with tf.name_scope('cross_entropy'):
-    with tf.name_scope('total'):
-        loss_op = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
-            logits=logits, labels=Y))
-        # loss_op = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=Y)
-    tf.summary.scalar('crocess_entropy', loss_op)
-
-with tf.name_scope('train'):
-    optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-    train_op = optimizer.minimize(loss_op)
-
-# Evaluate model
-with tf.name_scope('valid_accuracy'):
-    with tf.name_scope('correct_prediction'):
-        correct_pred = tf.equal(tf.argmax(prediction_v, 1), tf.cast(Yv, tf.int64))
-    with tf.name_scope('accuracy'):
-        accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
-tf.summary.scalar('valid_accuracy', accuracy)
-
-merged = tf.summary.merge_all()
-writer = tf.summary.FileWriter(summary_path)
-
-# Initialize the variables (i.e. assign their default value)
-init = tf.global_variables_initializer()
-
-saver = tf.train.Saver()
-tf.add_to_collection('prediction',prediction)
-# Start training
 with tf.Session() as sess:
+
+    # Store layers weight & bias
+    weights = {
+        # 5x5 conv, 3 input, 6 outputs
+        'wc1': tf.Variable(tf.random_normal([3, 3, image_channel, output_size_1])),
+        # 5x5 conv, 6 inputs, 12 outputs
+        'wc2': tf.Variable(tf.random_normal([5, 5, output_size_1, output_size_2])),
+        # fully connected, 8*8*12 inputs, 256 outpprint(classes)uts
+        'wd1': tf.Variable(tf.random_normal([8 * 8 * output_size_2, output_size_3])),
+        # 1024 inputs, 10 outputs (class predictioprint(classes)n)
+        'out': tf.Variable(tf.random_normal([output_size_3, output_size_4]))
+    }
+
+    biases = {
+        'bc1': tf.Variable(tf.random_normal([output_size_1])),
+        'bc2': tf.Variable(tf.random_normal([output_size_2])),
+        'bd1': tf.Variable(tf.random_normal([output_size_3])),
+        'out': tf.Variable(tf.random_normal([output_size_4]))
+    }
+
+    Xa, Ya, Xv, Yv, Xt, Yt = read_images(image_path, batch_size)
+
+    # Construct model
+    logits = conv_net(X, weights, biases, keep_prob)
+    prediction_v = tf.nn.softmax(conv_net(Xv, weights, biases, dropout=1.0))
+
+    prediction = tf.nn.softmax(conv_net(X, weights, biases, dropout=1.0))
+
+    # Define loss and optimizer
+    with tf.name_scope('cross_entropy'):
+        with tf.name_scope('total'):
+            loss_op = tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(
+                logits=logits, labels=Y))
+            # loss_op = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=Y)
+        tf.summary.scalar('crocess_entropy', loss_op)
+
+    with tf.name_scope('train'):
+        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+        train_op = optimizer.minimize(loss_op)
+
+    # Evaluate model
+    with tf.name_scope('valid_accuracy'):
+        with tf.name_scope('correct_prediction'):
+            correct_pred = tf.equal(tf.argmax(prediction_v, 1), tf.cast(Yv, tf.int64))
+        with tf.name_scope('accuracy'):
+            accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
+    tf.summary.scalar('valid_accuracy', accuracy)
+
+    merged = tf.summary.merge_all()
+    writer = tf.summary.FileWriter(summary_path, graph=sess.graph)
+
+    # Initialize the variables (i.e. assign their default value)
+    init = tf.global_variables_initializer()
+
+    for filename in glob.glob(model_path+'*'):
+        os.remove(filename)
+
+    saver = tf.train.Saver()
+    tf.add_to_collection('prediction',prediction)
+    # Start training
+
     coord = tf.train.Coordinator()
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
+    options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+    run_metadata = tf.RunMetadata()
     # Run the initializer
     sess.run(init)
 
@@ -361,30 +360,30 @@ with tf.Session() as sess:
     max_acc = 0.0
     acc = 0.0
     for step in range(1, num_steps + 1):
-        # batch_x, batch_y = mnist.train.next_batch(batch_size)
-        # Run optimization op (backprop)
-        # sess.run(train_op, feed_dict={X: batch_x, Y: batch_y, keep_prob: dropout})
+
         batch_x , batch_y = sess.run([Xa,Ya])
         # print(batch_x[0])
-        # print(batch_y.shape)
+        # exit()
 
         if step % display_step == 0 or step == 1:
             # Calculate batch loss and accuracy
+            # summary, _, loss, acc = sess.run([merged, train_op, loss_op, accuracy],feed_dict={X: batch_x, Y: batch_y, keep_prob: dropout},options=options, run_metadata=run_metadata)
             summary, _, loss, acc = sess.run([merged, train_op, loss_op, accuracy],feed_dict={X: batch_x, Y: batch_y, keep_prob: dropout})
-            # _, loss, acc = sess.run([train_op, loss_op, accuracy])
             print("Step " + str(step) + ", Minibatch Loss= " +
-                  "{:.4f}".format(loss) + ", Training Accuracy= " +
-                  "{:.3f}".format(acc))
+                    "{:.4f}".format(loss) + ", Training Accuracy= " +
+                    "{:.5f}".format(acc))
+            # writer.add_run_metadata(run_metadata, 'step%03d' % step)
             writer.add_summary(summary, step)
+            if step % 500 == 0:
+                saver.save(sess, model_path+str(step))
+
             if max_acc < acc:
                 max_acc = acc
                 if max_acc > 0.85:
-                    saver.save(sess, './my_tf_model')
+                    saver.save(sess, model_path+"{:.2f}".format(max_acc))
                     print("Saved")
         else:
-            # summary, _ = sess.run([merged, train_op])
             sess.run(train_op,feed_dict={X: batch_x, Y: batch_y, keep_prob: dropout})
-            # writer.add_summary(summary, step)
 
     print("Optimization Finished!")
 
@@ -393,9 +392,3 @@ with tf.Session() as sess:
 
     coord.request_stop()
     coord.join(threads)
-
-    # Calculate accuracy for 256 MNIST test images
-    # print("Testing Accuracy:", \
-    #     sess.run(accuracy, feed_dict={X: mnist.test.images[:256],
-    #                                   Y: mnist.test.labels[:256],
-    #                                   keep_prob: 1.0}))
