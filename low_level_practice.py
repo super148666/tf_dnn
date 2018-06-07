@@ -5,6 +5,8 @@ import tensorflow as tf
 import os
 import random
 
+from datetime import datetime
+
 old_v = tf.logging.get_verbosity()
 tf.logging.set_verbosity(tf.logging.ERROR)
 
@@ -17,7 +19,7 @@ image_path = [
             #   "/media/chao/RAID1_L/chaoz/cone_detection_data/webcam/"
             ]
 
-summary_path = '/home/chao/vision_ws/src/tf_dnn/summary/'
+summary_path = '/home/chao/vision_ws/src/tf_dnn/summary/' + str(datetime.now()) + '/'
 
 model_path = '/home/chao/vision_ws/src/tf_dnn/my_tf_model'
 
@@ -49,9 +51,9 @@ output_size_3 = 512
 output_size_4 = num_classes
 
 # # tf Graph input
-# X = tf.placeholder(tf.float32, [None, num_input])
-# Y = tf.placeholder(tf.float32, [None, num_classes])
-# keep_prob = tf.placeholder(tf.float32) # dropout (keep probability)
+X = tf.placeholder(tf.float32, [None, image_height, image_width, image_channel], name='input')
+Y = tf.placeholder(tf.int32, [None], name='label')
+keep_prob = tf.placeholder(tf.float32, name='keep_prob') # dropout (keep probability)
 
 
 # Reading the dataset
@@ -182,15 +184,15 @@ def read_images(dataset_paths, batch_size):
 
 def variable_summaries(var):
   """Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
-  with tf.name_scope('summaries'):
-    mean = tf.reduce_mean(var)
-    tf.summary.scalar('mean', mean)
-    with tf.name_scope('stddev'):
-      stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
-    tf.summary.scalar('stddev', stddev)
-    tf.summary.scalar('max', tf.reduce_max(var))
-    tf.summary.scalar('min', tf.reduce_min(var))
-    tf.summary.histogram('histogram', var)
+#   with tf.name_scope('summaries'):
+#     mean = tf.reduce_mean(var)
+#     tf.summary.scalar('mean', mean)
+#     with tf.name_scope('stddev'):
+#       stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
+#     tf.summary.scalar('stddev', stddev)
+#     tf.summary.scalar('max', tf.reduce_max(var))
+#     tf.summary.scalar('min', tf.reduce_min(var))
+#     tf.summary.histogram('histogram', var)
 
 
 # Create some wrappers for simplicity
@@ -312,12 +314,13 @@ biases = {
     'out': tf.Variable(tf.random_normal([output_size_4]))
 }
 
-X, Y, Xv, Yv, Xt, Yt = read_images(image_path, batch_size)
+Xa, Ya, Xv, Yv, Xt, Yt = read_images(image_path, batch_size)
 
 # Construct model
-logits = conv_net(X, weights, biases, dropout)
-prediction = tf.nn.softmax(conv_net(Xv, weights, biases, dropout=1.0))
-prediction_t = tf.nn.softmax(conv_net(Xt, weights, biases, dropout=1.0))
+logits = conv_net(X, weights, biases, keep_prob)
+prediction_v = tf.nn.softmax(conv_net(Xv, weights, biases, dropout=1.0))
+
+prediction = tf.nn.softmax(conv_net(X, weights, biases, dropout=1.0))
 
 # Define loss and optimizer
 with tf.name_scope('cross_entropy'):
@@ -334,20 +337,10 @@ with tf.name_scope('train'):
 # Evaluate model
 with tf.name_scope('valid_accuracy'):
     with tf.name_scope('correct_prediction'):
-        correct_pred = tf.equal(tf.argmax(prediction, 1), tf.cast(Yv, tf.int64))
+        correct_pred = tf.equal(tf.argmax(prediction_v, 1), tf.cast(Yv, tf.int64))
     with tf.name_scope('accuracy'):
         accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
 tf.summary.scalar('valid_accuracy', accuracy)
-
-# with tf.name_scope('test_accuracy'):
-#     with tf.name_scope('correct_prediction'):
-#         correct_pred_t = tf.equal(tf.argmax(prediction_t, 1), tf.cast(Yt, tf.int64))
-#     with tf.name_scope('accuracy'):
-#         accuracy_t = tf.reduce_mean(tf.cast(correct_pred_t, tf.float32))
-# tf.summary.scalar('test_accuracy', accuracy_t)
-
-correct_pred_t = tf.equal(tf.argmax(prediction_t, 1), tf.cast(Yt, tf.int64))
-accuracy_t = tf.reduce_mean(tf.cast(correct_pred_t, tf.float32))
 
 merged = tf.summary.merge_all()
 writer = tf.summary.FileWriter(summary_path)
@@ -356,7 +349,7 @@ writer = tf.summary.FileWriter(summary_path)
 init = tf.global_variables_initializer()
 
 saver = tf.train.Saver()
-
+tf.add_to_collection('prediction',prediction)
 # Start training
 with tf.Session() as sess:
     coord = tf.train.Coordinator()
@@ -371,10 +364,13 @@ with tf.Session() as sess:
         # batch_x, batch_y = mnist.train.next_batch(batch_size)
         # Run optimization op (backprop)
         # sess.run(train_op, feed_dict={X: batch_x, Y: batch_y, keep_prob: dropout})
+        batch_x , batch_y = sess.run([Xa,Ya])
+        # print(batch_x[0])
+        # print(batch_y.shape)
 
         if step % display_step == 0 or step == 1:
             # Calculate batch loss and accuracy
-            summary, _, loss, acc = sess.run([merged, train_op, loss_op, accuracy])
+            summary, _, loss, acc = sess.run([merged, train_op, loss_op, accuracy],feed_dict={X: batch_x, Y: batch_y, keep_prob: dropout})
             # _, loss, acc = sess.run([train_op, loss_op, accuracy])
             print("Step " + str(step) + ", Minibatch Loss= " +
                   "{:.4f}".format(loss) + ", Training Accuracy= " +
@@ -387,13 +383,13 @@ with tf.Session() as sess:
                     print("Saved")
         else:
             # summary, _ = sess.run([merged, train_op])
-            sess.run(train_op)
+            sess.run(train_op,feed_dict={X: batch_x, Y: batch_y, keep_prob: dropout})
             # writer.add_summary(summary, step)
 
     print("Optimization Finished!")
 
-    print("Testing Accuracy:",
-    sess.run(accuracy_t))
+    # print("Testing Accuracy:",
+    # sess.run(accuracy_t))
 
     coord.request_stop()
     coord.join(threads)

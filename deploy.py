@@ -10,6 +10,7 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge, CvBridgeError
 import numpy as np
 import tensorflow as tf
+from datetime import datetime
 
 old_v = tf.logging.get_verbosity()
 tf.logging.set_verbosity(tf.logging.ERROR)
@@ -28,110 +29,110 @@ roi_upper = 0.5
 roi_lower = 1.0
 win_height = 32
 win_width = 32
-win_stride = 8
+win_stride = 10
 
 
 # Network Parameters
-num_input = image_width * image_height * image_channel  # MNIST data input (img shape: 28*28)
-num_classes = 2  # MNIST total classes (0-9 digits)
-output_size_1 = 8
-output_size_2 = 16
-output_size_3 = 512
-output_size_4 = num_classes
+# num_input = image_width * image_height * image_channel  # MNIST data input (img shape: 28*28)
+# num_classes = 2  # MNIST total classes (0-9 digits)
+# output_size_1 = 8
+# output_size_2 = 16
+# output_size_3 = 512
+# output_size_4 = num_classes
 
 
 
-# # tf Graph input
-X = tf.placeholder(tf.float32, [None, num_input])
-Y = tf.placeholder(tf.float32, [None, num_classes])
+# # # tf Graph input
+# X = tf.placeholder(tf.float32, [None, num_input])
+# Y = tf.placeholder(tf.float32, [None, num_classes])
 
 
-# Create some wrappers for simplicity
-def conv2d(x, W, b, strides=1):
-    # Conv2D wrapper, with bias and relu activation
+# # Create some wrappers for simplicity
+# def conv2d(x, W, b, strides=1):
+#     # Conv2D wrapper, with bias and relu activation
     
-    x = tf.nn.conv2d(x, W, strides=[1, strides, strides, 1], padding='SAME')
-    x = tf.nn.bias_add(x, b)
-    return tf.nn.tanh(x)
+#     x = tf.nn.conv2d(x, W, strides=[1, strides, strides, 1], padding='SAME')
+#     x = tf.nn.bias_add(x, b)
+#     return tf.nn.tanh(x)
 
 
-def maxpool2d(x, k=2):
-    # MaxPool2D wrapper
-    return tf.nn.max_pool(x, ksize=[1, k, k, 1], strides=[1, k, k, 1],
-                          padding='SAME')
+# def maxpool2d(x, k=2):
+#     # MaxPool2D wrapper
+#     return tf.nn.max_pool(x, ksize=[1, k, k, 1], strides=[1, k, k, 1],
+#                           padding='SAME')
 
 
-def fc1d(x, W, b, act=tf.nn.relu):
-    x_reshaped = tf.reshape(x, [-1, W.get_shape().as_list()[0]])
-    pre_activations = tf.add(tf.matmul(x_reshaped, W), b)
-    activations = act(pre_activations, name='activation')
+# def fc1d(x, W, b, act=tf.nn.relu):
+#     x_reshaped = tf.reshape(x, [-1, W.get_shape().as_list()[0]])
+#     pre_activations = tf.add(tf.matmul(x_reshaped, W), b)
+#     activations = act(pre_activations, name='activation')
     
-    return activations
+#     return activations
 
 
-def dropout1d(x, dropout):
-    dropped = tf.nn.dropout(x, dropout)
+# def dropout1d(x, dropout):
+#     dropped = tf.nn.dropout(x, dropout)
 
-    return dropped
+#     return dropped
 
-# Create model
-def conv_net(x, weights, biases, dropout):
-    # Reshape to match picture format [Height x Width x Channel]
-    # Tensor input become 4-D: [Batch Size, Height, Width, Channel]
-    x = tf.reshape(x, shape=[-1, image_height, image_width, image_channel])
+# # Create model
+# def conv_net(x, weights, biases, dropout):
+#     # Reshape to match picture format [Height x Width x Channel]
+#     # Tensor input become 4-D: [Batch Size, Height, Width, Channel]
+#     x = tf.reshape(x, shape=[-1, image_height, image_width, image_channel])
 
-    # Convolution Layer
-    # input size: 32x32x3
-    # output size: 32x32x3
-    conv1 = conv2d(x, weights['wc1'], biases['bc1'])
-    # Max Pooling (down-sampling)
-    # input size: 32x32x3
-    # output size: 16x16x3
-    conv1 = maxpool2d(conv1, k=2)
+#     # Convolution Layer
+#     # input size: 32x32x3
+#     # output size: 32x32x3
+#     conv1 = conv2d(x, weights['wc1'], biases['bc1'])
+#     # Max Pooling (down-sampling)
+#     # input size: 32x32x3
+#     # output size: 16x16x3
+#     conv1 = maxpool2d(conv1, k=2)
 
-    # Convolution Layer
-    # input size: 16x16x3
-    # output size: 16x16x6
-    conv2 = conv2d(conv1, weights['wc2'], biases['bc2'])
-    # Max Pooling (down-sampling)
-    # input size: 16x16x6
-    # output size: 8x8x6
-    conv2 = maxpool2d(conv2, k=2)
+#     # Convolution Layer
+#     # input size: 16x16x3
+#     # output size: 16x16x6
+#     conv2 = conv2d(conv1, weights['wc2'], biases['bc2'])
+#     # Max Pooling (down-sampling)
+#     # input size: 16x16x6
+#     # output size: 8x8x6
+#     conv2 = maxpool2d(conv2, k=2)
 
-    # Fully connected layer
-    # input size: 8x8x6
-    # output size: 1024
-    # Reshape conv2 output to fit fully connected layer input
-    fc1 = fc1d(conv2, weights['wd1'], biases['bd1'], act=tf.nn.tanh)
+#     # Fully connected layer
+#     # input size: 8x8x6
+#     # output size: 1024
+#     # Reshape conv2 output to fit fully connected layer input
+#     fc1 = fc1d(conv2, weights['wd1'], biases['bd1'], act=tf.nn.tanh)
     
-    # Dropout layer
-    dp1 = dropout1d(fc1, dropout)
+#     # Dropout layer
+#     dp1 = dropout1d(fc1, dropout)
 
-    # Output, class prediction
-    # input size: 1024
-    # output size: 2
-    out = fc1d(dp1, weights['out'], biases['out'], act=tf.identity)
-    return out
+#     # Output, class prediction
+#     # input size: 1024
+#     # output size: 2
+#     out = fc1d(dp1, weights['out'], biases['out'], act=tf.identity)
+#     return out
 
 
-# Store layers weight & bias
-weights = {
-    # 5x5 conv, 3 input, 6 outputs
-    'wc1': tf.Variable(tf.random_normal([3, 3, image_channel, output_size_1])),
-    # 5x5 conv, 6 inputs, 12 outputs
-    'wc2': tf.Variable(tf.random_normal([3, 3, output_size_1, output_size_2])),
-    # fully connected, 8*8*12 inputs, 256 outputs
-    'wd1': tf.Variable(tf.random_normal([8 * 8 * output_size_2, output_size_3])),
-    # 1024 inputs, 10 outputs (class prediction)
-    'out': tf.Variable(tf.random_normal([output_size_3, output_size_4]))
-}
+# # Store layers weight & bias
+# weights = {
+#     # 5x5 conv, 3 input, 6 outputs
+#     'wc1': tf.Variable(tf.random_normal([3, 3, image_channel, output_size_1])),
+#     # 5x5 conv, 6 inputs, 12 outputs
+#     'wc2': tf.Variable(tf.random_normal([3, 3, output_size_1, output_size_2])),
+#     # fully connected, 8*8*12 inputs, 256 outputs
+#     'wd1': tf.Variable(tf.random_normal([8 * 8 * output_size_2, output_size_3])),
+#     # 1024 inputs, 10 outputs (class prediction)
+#     'out': tf.Variable(tf.random_normal([output_size_3, output_size_4]))
+# }
 
-biases = {
-    'bc1': tf.Variable(tf.random_normal([output_size_1])),
-    'bc2': tf.Variable(tf.random_normal([output_size_2])),
-    'bd1': tf.Variable(tf.random_normal([output_size_3])),
-    'out': tf.Variable(tf.random_normal([output_size_4]))
-}
+# biases = {
+#     'bc1': tf.Variable(tf.random_normal([output_size_1])),
+#     'bc2': tf.Variable(tf.random_normal([output_size_2])),
+#     'bd1': tf.Variable(tf.random_normal([output_size_3])),
+#     'out': tf.Variable(tf.random_normal([output_size_4]))
+# }
 
 
 class image_converter:
@@ -203,9 +204,10 @@ class image_converter:
             self.topic_active = True
         else:
             self.windows, self.windows_start_points = self.get_image_patch()
+            print(self.windows.shape)
             self.results = self.sess.run(self.out, feed_dict={X: self.windows})
             for index in range(0,self.results.shape[0]):
-                if self.results[index,0] < self.results[index,1] and self.results[index,1] >0.99:
+                if self.results[index,0] < self.results[index,1] and self.results[index,1] >0.5 and self.results[index,0] <0.0001:
                 # if self.results[index,1] < self.results[index,0] and self.results[index,0] >0.95:
                     cv2.rectangle(self.proc_image, (self.windows_start_points[index][0], self.windows_start_points[index][1]), (self.windows_start_points[index][0]+self.win_height, self.windows_start_points[index][1]+self.win_width), (0,0,255), 1) 
                     
@@ -229,16 +231,17 @@ class image_converter:
         # print("number of windows: ", len(start_points))
         images_array = np.asarray(images)
         # print("shape of images array: ", images_array.shape)
-        images_array = np.reshape(images_array, [-1, num_input])
+        images_array = np.reshape(images_array, [-1, image_height, image_width, image_channel])
         # print("shape of flatten array: ", images_array.shape)
         
         return images_array, start_points
             
 
+tf.reset_default_graph()
 
  
 
-prediction = tf.nn.softmax(conv_net(X, weights, biases, dropout=1.0))
+# prediction = tf.nn.softmax(conv_net(X, weights, biases, dropout=1.0))
 # prediction = conv_net(X, weights, biases, dropout=1.0)
 
 # init = tf.global_variables_initializer()
@@ -256,6 +259,9 @@ init = tf.global_variables_initializer()
 sess.run(init)
 saver = tf.train.import_meta_graph(model_path+'.meta')
 saver.restore(sess, tf.train.latest_checkpoint('./'))
+graph = tf.get_default_graph()
+X = graph.get_tensor_by_name('input:0')
+prediction = tf.get_collection('prediction')[0]
 
 rospy.init_node('image_converter', anonymous=True)
 
