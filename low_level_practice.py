@@ -6,6 +6,7 @@ import os
 import glob
 import random
 import tempfile
+import time
 from datetime import datetime
 
 old_v = tf.logging.get_verbosity()
@@ -13,12 +14,21 @@ tf.logging.set_verbosity(tf.logging.ERROR)
 
 seed = 100
 
-image_path = [
-            #   "/media/chao/RAID1_L/chaoz/cone_detection_data/basler32/",
-              "/media/chao/RAID1_L/chaoz/cone_detection_data/basler_new/",
-            #   "/media/chao/RAID1_L/chaoz/cone_detection_data/basler/",
-            #   "/media/chao/RAID1_L/chaoz/cone_detection_data/webcam/"
-            ]
+image_path_1 = [
+                # "/media/chao/RAID1_L/chaoz/cone_detection_data/basler32/",
+                # "/media/chao/RAID1_L/chaoz/cone_detection_data/basler_new/",
+                "/media/chao/RAID1_L/chaoz/cone_detection_data/small_dataset/",
+                # "/media/chao/RAID1_L/chaoz/cone_detection_data/basler/",
+                # "/media/chao/RAID1_L/chaoz/cone_detection_data/webcam/"
+                ]
+
+image_path_2 = [
+                # "/media/chao/RAID1_L/chaoz/cone_detection_data/basler32/",
+                "/media/chao/RAID1_L/chaoz/cone_detection_data/basler_new/",
+                # "/media/chao/RAID1_L/chaoz/cone_detection_data/small_dataset/",
+                # "/media/chao/RAID1_L/chaoz/cone_detection_data/basler/",
+                # "/media/chao/RAID1_L/chaoz/cone_detection_data/webcam/"
+                ]
 
 current_time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
@@ -35,14 +45,12 @@ image_channel = 3
 
 # Dataset Partition
 train_partition = 0.8
-valid_partition = 0.2
-test_partition = 1.0 - valid_partition - train_partition
 
 # Training Parameters
 samples_each_class = 100000
-learning_rate = 0.002
+learning_rate = 0.001
 num_steps = 10000
-batch_size = 128
+batch_size = 512
 display_step = 10
 
 
@@ -50,10 +58,25 @@ display_step = 10
 num_input = image_width * image_height * image_channel  # MNIST data input (img shape: 28*28)
 num_classes = 2  # MNIST total classes (0-9 digits)
 dropout = 1.0  # Dropout, probability to keep units
-output_size_1 = 9
-output_size_2 = 9
-output_size_3 = 256
-output_size_4 = num_classes
+conv1_size = 3
+wc1_size = 32
+pool1_size = 2
+conv2_size = 3
+wc2_size = 64
+pool2_size = 2
+conv3_size = 3
+wc3_size = 128
+
+wd1_size = 1024
+wd2_size = 256
+wd3_size = 64
+output_size_1 = wc1_size
+output_size_2 = wc2_size
+output_size_3 = wc3_size
+output_size_4 = wd1_size
+output_size_5 = wd2_size
+output_size_6 = wd3_size
+output_size_7 = num_classes
 
 # # tf Graph input
 X = tf.placeholder(tf.float32, [None, image_height, image_width, image_channel], name='input')
@@ -63,7 +86,7 @@ keep_prob = tf.placeholder(tf.float32, name='keep_prob') # dropout (keep probabi
 
 # Reading the dataset
 # 2 modes: 'file' or 'folder'
-def read_images(dataset_paths, batch_size):
+def read_images(dataset_paths, split_ratio = 1.0, image_channel=3):
     imagepaths, labels = list(), list()
     # An ID will be affected to each sub-folders by alphabetical order
     total_data = 0
@@ -105,86 +128,46 @@ def read_images(dataset_paths, batch_size):
     random.Random(seed).shuffle(imagepaths)
     total_data = len(labels)
 
-    train_size = (int)(total_data * train_partition) - 1
-    valid_size = train_size + (int)(total_data * valid_partition) - 1
-    test_size = valid_size + (int)(total_data * test_partition) - 1
+    size_1 = (int)(total_data * split_ratio)
 
-    train_imagepaths = imagepaths[0:train_size]
-    train_labels = labels[0:train_size]
+    imagepaths_1 = imagepaths[0:size_1]
+    labels_1 = labels[0:size_1]
 
-    valid_imagepaths = imagepaths[train_size + 1:valid_size]
-    valid_labels = labels[train_size + 1:valid_size]
+    imagepaths_2 = imagepaths[size_1 + 1:total_data]
+    labels_2 = labels[size_1 + 1:total_data]
 
-    test_imagepaths = imagepaths[valid_size + 1:test_size]
-    test_labels = labels[valid_size + 1:test_size]
-
-    train_size = len(train_labels)
-    valid_size = len(valid_labels)
-    test_size = len(test_labels)
-    print("train set size: ", train_size)
-    print("valid set size: ", valid_size)
-    print("test set size: ", test_size)
+    size_1 = len(labels_1)
+    size_2 = len(labels_2)
 
     # Convert to Tensor
-    train_imagepaths = tf.convert_to_tensor(train_imagepaths, dtype=tf.string)
-    train_labels = tf.convert_to_tensor(train_labels, dtype=tf.int32)
+    imagepaths_1 = tf.convert_to_tensor(imagepaths_1, dtype=tf.string)
+    labels_1 = tf.convert_to_tensor(labels_1, dtype=tf.int32)
 
-    valid_imagepaths = tf.convert_to_tensor(valid_imagepaths, dtype=tf.string)
-    valid_labels = tf.convert_to_tensor(valid_labels, dtype=tf.int32)
-
-    test_imagepaths = tf.convert_to_tensor(test_imagepaths, dtype=tf.string)
-    test_labels = tf.convert_to_tensor(test_labels, dtype=tf.int32)
+    imagepaths_2 = tf.convert_to_tensor(imagepaths_2, dtype=tf.string)
+    labels_2 = tf.convert_to_tensor(labels_2, dtype=tf.int32)
 
     # Build a TF Queue, shuffle data
-    train_image, train_label = tf.train.slice_input_producer([train_imagepaths, train_labels],
+    image_1, label_1 = tf.train.slice_input_producer([imagepaths_1, labels_1],
                                                              shuffle=True)
 
-    valid_image, valid_label = tf.train.slice_input_producer([valid_imagepaths, valid_labels],
+    image_2, label_2 = tf.train.slice_input_producer([imagepaths_2, labels_2],
                                                              shuffle=True)
-
-    test_image, test_label = tf.train.slice_input_producer([test_imagepaths, test_labels],
-                                                           shuffle=True)
 
     # Read images from disk
-    train_image = tf.read_file(train_image)
-    train_image = tf.image.decode_png(train_image, channels=image_channel)
+    image_1 = tf.read_file(image_1)
+    image_1 = tf.image.decode_png(image_1, channels=image_channel)
 
-    valid_image = tf.read_file(valid_image)
-    valid_image = tf.image.decode_png(valid_image, channels=image_channel)
+    image_2 = tf.read_file(image_2)
+    image_2 = tf.image.decode_png(image_2, channels=image_channel)
 
-    test_image = tf.read_file(test_image)
-    test_image = tf.image.decode_png(test_image, channels=image_channel)
-
-    # Resize images to a common size
-    train_image = tf.image.resize_images(train_image, [image_height, image_width])
-
-    valid_image = tf.image.resize_images(valid_image, [image_height, image_width])
-
-    test_image = tf.image.resize_images(test_image, [image_height, image_width])
-    
-    # # Normalize
-
-    train_image = tf.image.per_image_standardization(train_image)
-    valid_image = tf.image.per_image_standardization(valid_image)
-    test_image = tf.image.per_image_standardization(test_image)
-    
-    # Create batches
-    X, Y = tf.train.shuffle_batch([train_image, train_label], batch_size=batch_size,
-                          capacity=batch_size * 8, min_after_dequeue=batch_size * 2,
-                          num_threads=4)
-
-    Xv, Yv = tf.train.batch([valid_image, valid_label], batch_size=valid_size,
-                            capacity=batch_size * 8,
-                            num_threads=4)
-
-    Xt, Yt = tf.train.batch([test_image, test_label], batch_size=test_size,
-                            capacity=batch_size * 8,
-                            num_threads=4)
-
-    return X, Y, Xv, Yv, Xt, Yt
+    return image_1, label_1, size_1, image_2, label_2, size_2
 
 
-# def split_dataset(images, labels, train_ratio, valid_ratio, test_ratio, shuffle=True)
+def preprocessing(input_images, image_height=32, image_width=32):
+    output_images = tf.image.resize_images(input_images, [image_height, image_width])
+    output_images = tf.image.per_image_standardization(output_images)
+    return output_images
+
 
 
 def variable_summaries(var):
@@ -211,6 +194,10 @@ def conv2d(x, W, b, layer_name, strides=1, act=tf.nn.relu):
             # W_0_to_1 = (W - W_min) / (W_max - W_min)
             # W_transposed = tf.transpose(W_0_to_1, [-1, 5, 5, 1])
             # tf.summary.image('filters', W_transposed)
+            # for input_index in range(0,W.get_shape()[2]):
+            #     for output_index in range(0,W.get_shape[3]):
+                    
+                    
         with tf.name_scope('biases'):
             variable_summaries(b)
         with tf.name_scope('Wx_plus_b'):    
@@ -269,21 +256,32 @@ def conv_net(x, weights, biases, dropout):
     # Convolution Layer
     conv1 = conv2d(x, weights['wc1'], biases['bc1'], layer_name='conv1',act=tf.nn.relu)
     # Max Pooling (down-sampling)
-    conv1 = maxpool2d(conv1, k=2, layer_name='max_pool1')
+    conv1 = maxpool2d(conv1, k=pool1_size, layer_name='max_pool1')
 
     # Convolution Layer
-    conv2 = conv2d(conv1, weights['wc2'], biases['bc2'], layer_name='conv2',act=tf.nn.tanh)
+    conv2 = conv2d(conv1, weights['wc2'], biases['bc2'], layer_name='conv2',act=tf.nn.relu)
     # Max Pooling (down-sampling)
-    conv2 = maxpool2d(conv2, k=2, layer_name='max_pool2')
+    conv2 = maxpool2d(conv2, k=pool2_size, layer_name='max_pool2')
+
+    # Convolution Layer
+    conv3 = conv2d(conv2, weights['wc3'], biases['bc3'], layer_name='conv3',act=tf.nn.relu)
 
     # Fully connected layer
-    fc1 = fc1d(conv2, weights['wd1'], biases['bd1'], layer_name='fc1', act=tf.nn.tanh)
+    fc1 = fc1d(conv3, weights['wd1'], biases['bd1'], layer_name='fc1', act=tf.nn.tanh)
+
+    # Fully connected layer
+    fc2 = fc1d(fc1, weights['wd2'], biases['bd2'], layer_name='fc2', act=tf.nn.tanh)
+    
+    # Fully connected layer
+    fc3 = fc1d(fc2, weights['wd3'], biases['bd3'], layer_name='fc3', act=tf.nn.tanh)
     
     # Dropout layer
-    dp1 = dropout1d(fc1, dropout, 'dp1')
+    dp1 = dropout1d(fc3, dropout, 'dp1')
 
     # Output, class prediction
     out = fc1d(dp1, weights['out'], biases['out'], layer_name='out', act=tf.identity)
+
+
     return out
 
 
@@ -291,24 +289,79 @@ with tf.Session() as sess:
 
     # Store layers weight & bias
     weights = {
-        # 5x5 conv, 3 input, 6 outputs
-        'wc1': tf.Variable(tf.random_normal([3, 3, image_channel, output_size_1])),
-        # 5x5 conv, 6 inputs, 12 outputs
-        'wc2': tf.Variable(tf.random_normal([5, 5, output_size_1, output_size_2])),
-        # fully connected, 8*8*12 inputs, 256 outpprint(classes)uts
-        'wd1': tf.Variable(tf.random_normal([8 * 8 * output_size_2, output_size_3])),
-        # 1024 inputs, 10 outputs (class predictioprint(classes)n)
-        'out': tf.Variable(tf.random_normal([output_size_3, output_size_4]))
+        
+        'wc1': tf.Variable(tf.random_normal([conv1_size, conv1_size, image_channel, output_size_1])),
+        
+        'wc2': tf.Variable(tf.random_normal([conv2_size, conv2_size, output_size_1, output_size_2])),
+
+        'wc3': tf.Variable(tf.random_normal([conv3_size, conv3_size, output_size_2, output_size_3])),
+
+        'wd1': tf.Variable(tf.random_normal([int(image_height/2/2) * int(image_width/2/2) * output_size_3, output_size_4])),
+        
+        'wd2': tf.Variable(tf.random_normal([output_size_4, output_size_5])),
+
+        'wd3': tf.Variable(tf.random_normal([output_size_5, output_size_6])),
+        
+        'out': tf.Variable(tf.random_normal([output_size_6, output_size_7]))
     }
 
     biases = {
         'bc1': tf.Variable(tf.random_normal([output_size_1])),
         'bc2': tf.Variable(tf.random_normal([output_size_2])),
-        'bd1': tf.Variable(tf.random_normal([output_size_3])),
-        'out': tf.Variable(tf.random_normal([output_size_4]))
+        'bc3': tf.Variable(tf.random_normal([output_size_3])),
+        'bd1': tf.Variable(tf.random_normal([output_size_4])),
+        'bd2': tf.Variable(tf.random_normal([output_size_5])),
+        'bd3': tf.Variable(tf.random_normal([output_size_6])),
+        'out': tf.Variable(tf.random_normal([output_size_7]))
     }
 
-    Xa, Ya, Xv, Yv, Xt, Yt = read_images(image_path, batch_size)
+    # Load image from folder paths
+    train_image, train_label, train_size, _, _, _ = read_images(image_path_2)
+    valid_image, valid_label, valid_size, _, _, _ = read_images(image_path_1)
+    # Preprocess images - resize and standardization
+    train_image = preprocessing(train_image)
+    valid_image = preprocessing(valid_image)
+    
+    # Create batches
+    # for training
+    Xa, Ya = tf.train.shuffle_batch([train_image, train_label], batch_size=batch_size,
+                          capacity=batch_size * 8, min_after_dequeue=batch_size * 2,
+                          num_threads=4)
+    # for validation
+    # valid_size=256
+    Xv, Yv = tf.train.shuffle_batch([valid_image, valid_label], batch_size=valid_size,
+                            capacity=valid_size * 8, min_after_dequeue=valid_size*2,
+                            num_threads=4)
+
+    # Print debug info
+    print("=====DATASET INFO")
+    print("train set size: ", train_size)
+    print("valid set size: ", valid_size)
+    print("batch size: ", batch_size)
+    print("image size: "+str(image_height)+'x'+str(image_width)+'x'+str(image_channel))
+
+    print("=====TRAINING INFO")
+    print("learning rate: ",learning_rate)
+    print("batch size: ", batch_size)
+    print("num of epochs: ", num_steps)
+    print("record summary each " + str(display_step) + " steps")
+
+    # print("=====MODEL INFO")
+    # print("input size: "+str(batch_size)+'x'+str(image_height)+'x'+str(image_width)+'x'+str(image_channel))
+    # print("conv1 size: "+str(conv1_size)+'x'+str(conv1_size))
+    # print("conv1 output size: "+str(batch_size)+'x'+str(image_height)+'x'+str(image_width)+'x'+str(output_size_1))
+    # print("max pool1 size: "+str(pool1_size)+'x'+str(pool1_size))
+    # print("max pool1 output: "+str(batch_size)+'x'+str(image_height/pool1_size)+'x'+str(image_width/pool1_size)+'x'+str(output_size_1))
+    # print("conv2 size: "+str(conv2_size)+'x'+str(conv2_size))
+    # print("conv2 output size: "+str(batch_size)+'x'+str(image_height/pool1_size)+'x'+str(image_width/pool1_size)+'x'+str(output_size_2))
+    # print("max pool2 size: "+str(pool2_size)+'x'+str(pool2_size))
+    # print("max pool2 output: "+str(batch_size)+'x'+str(image_height/pool1_size/pool2_size)+'x'+str(image_width/pool1_size/pool2_size)+'x'+str(output_size_2))
+    # print("fc1 input size: "+str(batch_size)+'x'+str(int(image_height/2/2) * int(image_width/2/2) * output_size_2))
+    # print("fc1 size: "+str(output_size_3))
+    # print("fc1 output size: "+str(batch_size)+'x'+str(output_size_3))
+    # print("dropout : "+str(1-dropout))
+    # print("out size: "+str(output_size_4))
+    # print("out output size: "+str(batch_size)+'x'+str(output_size_4))
 
     # Construct model
     logits = conv_net(X, weights, biases, keep_prob)
@@ -319,7 +372,7 @@ with tf.Session() as sess:
     # Define loss and optimizer
     with tf.name_scope('cross_entropy'):
         with tf.name_scope('total'):
-            loss_op = tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(
+            loss_op = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
                 logits=logits, labels=Y))
             # loss_op = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=Y)
         tf.summary.scalar('crocess_entropy', loss_op)
@@ -345,7 +398,8 @@ with tf.Session() as sess:
     for filename in glob.glob(model_path+'*'):
         os.remove(filename)
 
-    saver = tf.train.Saver()
+    saver = tf.train.Saver(max_to_keep=10)
+    saver_fix_steps = tf.train.Saver(max_to_keep=0)
     tf.add_to_collection('prediction',prediction)
     # Start training
 
@@ -359,6 +413,7 @@ with tf.Session() as sess:
     tf.train.start_queue_runners()
     max_acc = 0.0
     acc = 0.0
+    print("Start Training: \r")
     for step in range(1, num_steps + 1):
 
         batch_x , batch_y = sess.run([Xa,Ya])
@@ -366,26 +421,28 @@ with tf.Session() as sess:
         # exit()
 
         if step % display_step == 0 or step == 1:
+            
             # Calculate batch loss and accuracy
             # summary, _, loss, acc = sess.run([merged, train_op, loss_op, accuracy],feed_dict={X: batch_x, Y: batch_y, keep_prob: dropout},options=options, run_metadata=run_metadata)
             summary, _, loss, acc = sess.run([merged, train_op, loss_op, accuracy],feed_dict={X: batch_x, Y: batch_y, keep_prob: dropout})
-            print("Step " + str(step) + ", Minibatch Loss= " +
-                    "{:.4f}".format(loss) + ", Training Accuracy= " +
-                    "{:.5f}".format(acc))
+
             # writer.add_run_metadata(run_metadata, 'step%03d' % step)
             writer.add_summary(summary, step)
             if step % 500 == 0:
-                saver.save(sess, model_path+str(step))
+                saver_fix_steps.save(sess,model_path, global_step=step)
 
             if max_acc < acc:
                 max_acc = acc
-                if max_acc > 0.85:
-                    saver.save(sess, model_path+"{:.2f}".format(max_acc))
-                    print("Saved")
+                print("Step " + str(step) + ", Minibatch Loss= " +
+                    "{:.4f}".format(loss) + ", Training Accuracy= " +
+                    "{:.5f}".format(acc)) #,end='\r')
+                if max_acc > 0.90:
+                    saver.save(sess, model_path+"{:.3f}".format(max_acc))
+                    print("Saved")#,end='\r')
         else:
             sess.run(train_op,feed_dict={X: batch_x, Y: batch_y, keep_prob: dropout})
 
-    print("Optimization Finished!")
+    print("\rOptimization Finished!")
 
     # print("Testing Accuracy:",
     # sess.run(accuracy_t))

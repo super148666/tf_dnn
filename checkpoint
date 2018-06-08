@@ -1,6 +1,2 @@
-model_checkpoint_path: "/home/chao/vision_ws/src/tf_dnn/my_tf_model0.99"
-all_model_checkpoint_paths: "/home/chao/vision_ws/src/tf_dnn/my_tf_model5000"
-all_model_checkpoint_paths: "/home/chao/vision_ws/src/tf_dnn/my_tf_model5500"
-all_model_checkpoint_paths: "/home/chao/vision_ws/src/tf_dnn/my_tf_model6000"
-all_model_checkpoint_paths: "/home/chao/vision_ws/src/tf_dnn/my_tf_model6500"
-all_model_checkpoint_paths: "/home/chao/vision_ws/src/tf_dnn/my_tf_model0.99"
+model_checkpoint_path: "/home/chao/vision_ws/src/tf_dnn/my_tf_model-10000"
+all_model_checkpoint_paths: "/home/chao/vision_ws/src/tf_dnn/my_tf_model-10000"

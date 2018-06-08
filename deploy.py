@@ -17,7 +17,7 @@ old_v = tf.logging.get_verbosity()
 tf.logging.set_verbosity(tf.logging.ERROR)
 
 
-model_path = '/home/chao/vision_ws/src/tf_dnn/my_tf_model0.99'
+model_path = '/home/chao/vision_ws/src/tf_dnn/my_tf_model0.971'
 topic_name = '/pylon_camera_node/image_raw'
 
 # Image Parameters
@@ -27,10 +27,10 @@ image_channel = 3
 scale_x = 1.0
 scale_y = 1.0
 roi_upper = 0.5
-roi_lower = 1.0
+roi_lower = 0.8
 win_height = 32
 win_width = 32
-win_stride = 8
+win_stride = 6
 
 
 
@@ -56,7 +56,8 @@ class image_converter:
         self.win_stride = win_stride
         self.windows = None
         self.windows_start_points = None
-        
+        self.feature_detector = cv2.ORB_create()
+
         # wait for first rostopic
         while self.topic_active == False:
             pass
@@ -92,25 +93,29 @@ class image_converter:
             print(e)
 
         # resize image
-        self.disp_image=cv2.resize(self.raw_image, (0,0), fx=self.scale_x, fy=self.scale_y)
-        self.proc_image = cv2.GaussianBlur(self.disp_image,(5,5),0)
+        self.disp_image = cv2.resize(self.raw_image, (0,0), fx=self.scale_x, fy=self.scale_y)
+
+        # self.disp_image = cv2.GaussianBlur(self.disp_image,(3,3),0)
+        # self.proc_image = cv2.GaussianBlur(self.disp_image,(5,5),0)
         self.proc_image = self.disp_image / 127.5 - 1.0
 
-        
         if self.topic_active == False:
             self.topic_active = True
         else:
+            
             self.windows, self.windows_start_points = self.get_image_patch()
-            # print(self.windows.shape)
+            kp = self.feature_detector.detect(self.disp_image,None)
+            cv2.drawKeypoints(self.disp_image, kp, self.disp_image, color=(255,0,0))
             self.results = self.sess.run(self.out, feed_dict={X: self.windows})
             for index in range(0,self.results.shape[0]):
                 # print(self.results[index])
                 # if self.results[index,1] >0.00000000 and self.results[index,0] <1.0:
                 # if self.results[index,1] < self.results[index,0] and self.results[index,0] >0.95:
-                if self.results[index,1]>self.results[index,0]:
-                    print("cone: ",self.results[index,1])
+                if self.results[index,1]>0.8:
+                    # print("cone: ",self.results[index,1])
                     cv2.rectangle(self.disp_image, (self.windows_start_points[index][0], self.windows_start_points[index][1]), (self.windows_start_points[index][0]+self.win_height, self.windows_start_points[index][1]+self.win_width), (0,0,255), 1) 
                     
+        
         cv2.imshow("proc iamge", self.disp_image)
         cv2.waitKey(1)
 
