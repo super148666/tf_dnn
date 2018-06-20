@@ -17,7 +17,7 @@ old_v = tf.logging.get_verbosity()
 tf.logging.set_verbosity(tf.logging.ERROR)
 
 
-model_path = '/home/chao/vision_ws/src/tf_dnn/my_tf_model0.971'
+model_path = '/media/chao/RAID1_L/chaoz/tf_model/latest/model-21-90-0.989'
 topic_name = '/pylon_camera_node/image_raw'
 
 # Image Parameters
@@ -26,11 +26,11 @@ image_height = 32
 image_channel = 3
 scale_x = 1.0
 scale_y = 1.0
-roi_upper = 0.5
-roi_lower = 0.8
+roi_upper = 0.0
+roi_lower = 1.0
 win_height = 32
 win_width = 32
-win_stride = 6
+win_stride = 16
 
 
 
@@ -108,10 +108,10 @@ class image_converter:
             cv2.drawKeypoints(self.disp_image, kp, self.disp_image, color=(255,0,0))
             self.results = self.sess.run(self.out, feed_dict={X: self.windows})
             for index in range(0,self.results.shape[0]):
-                # print(self.results[index])
+                print(self.results[index])
                 # if self.results[index,1] >0.00000000 and self.results[index,0] <1.0:
                 # if self.results[index,1] < self.results[index,0] and self.results[index,0] >0.95:
-                if self.results[index,1]>0.8:
+                if self.results[index,1]>0.99:
                     # print("cone: ",self.results[index,1])
                     cv2.rectangle(self.disp_image, (self.windows_start_points[index][0], self.windows_start_points[index][1]), (self.windows_start_points[index][0]+self.win_height, self.windows_start_points[index][1]+self.win_width), (0,0,255), 1) 
                     
@@ -128,7 +128,7 @@ class image_converter:
             x = 0
             while x < (self.proc_width - self.win_width):
                 image = self.proc_image[y:y+self.win_height, x:x+self.win_width]
-                image = stats.zscore(image)
+                # image = stats.zscore(image)
                 images.append(image)
                 start_points.append(np.array([x, y]))
                 x = x + self.win_stride
